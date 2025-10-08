@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-База данных для пивных кранов
-Содержит информацию о пиве: краны, пивоварня, название, стиль, цена за литр
+Модуль для работы с базой данных пивных кранов
 """
 
 import sqlite3
@@ -10,109 +8,217 @@ import os
 from typing import List, Tuple, Optional
 
 class BeerDatabase:
+    """Класс для работы с базой данных пивных кранов"""
+    
     def __init__(self, db_path: str = "beer_database.db"):
-        """Инициализация базы данных"""
+        """Инициализация подключения к базе данных
+        
+        Args:
+            db_path: Путь к файлу базы данных
+        """
         self.db_path = db_path
         self.init_database()
     
     def init_database(self):
-        """Создание таблицы если её нет"""
+        """Инициализация базы данных и создание таблиц"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
+        # Создаем таблицу для пивных кранов
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS beer_taps (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 tap_position INTEGER UNIQUE NOT NULL,
                 brewery TEXT NOT NULL,
-                beer_name TEXT NOT NULL,
-                beer_style TEXT NOT NULL,
-                price_per_liter REAL NOT NULL
+                name TEXT NOT NULL,
+                style TEXT NOT NULL,
+                price_per_liter REAL NOT NULL,
+                description TEXT,
+                cost_400ml REAL NOT NULL,
+                cost_250ml REAL NOT NULL,
+                untappd_url TEXT,
+                abv REAL,
+                ibu REAL
             )
+        ''')
+        
+        # Создаем индекс для быстрого поиска по номеру крана
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_tap_position 
+            ON beer_taps(tap_position)
+        ''')
+        
+        # Создаем таблицу истории пива для быстрого добавления
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS beer_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                brewery TEXT NOT NULL,
+                name TEXT NOT NULL,
+                style TEXT NOT NULL,
+                description TEXT,
+                untappd_url TEXT,
+                abv REAL,
+                ibu REAL,
+                added_count INTEGER DEFAULT 1,
+                last_added TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Создаем индекс для поиска по названию пива
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_beer_name 
+            ON beer_history(name)
         ''')
         
         conn.commit()
         conn.close()
-        print("База данных инициализирована успешно!")
     
-    def add_beer(self, tap_position: int, brewery: str, beer_name: str, beer_style: str, price_per_liter: float) -> bool:
-        """Добавить новое пиво в кран"""
+    def add_beer(self, tap_position: int, brewery: str, name: str, 
+                 style: str, price_per_liter: float, description: str = "", 
+                 cost_400ml: float = 0.0, cost_250ml: float = 0.0, untappd_url: str = "",
+                 abv: float = None, ibu: float = None) -> bool:
+        """Добавляет новое пиво в кран
+        
+        Args:
+            tap_position: Номер позиции крана
+            brewery: Название пивоварни
+            name: Название пива
+            style: Сорт пива
+            price_per_liter: Цена за литр
+            description: Описание пива
+            cost_400ml: Стоимость за 400 мл
+            cost_250ml: Стоимость за 250 мл
+            untappd_url: Ссылка на страницу пива в Untappd
+            abv: Содержание алкоголя в процентах
+            ibu: Горечь пива (International Bitterness Units)
+            
+        Returns:
+            True если успешно добавлено, False если ошибка
+        """
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
             cursor.execute('''
-                INSERT INTO beer_taps (tap_position, brewery, beer_name, beer_style, price_per_liter)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (tap_position, brewery, beer_name, beer_style, price_per_liter))
+                INSERT INTO beer_taps (tap_position, brewery, name, style, 
+                                     price_per_liter, description, cost_400ml, cost_250ml, 
+                                     untappd_url, abv, ibu)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (tap_position, brewery, name, style, price_per_liter, description, 
+                  cost_400ml, cost_250ml, untappd_url, abv, ibu))
             
             conn.commit()
             conn.close()
-            print(f"Пиво '{beer_name}' от пивоварни '{brewery}' добавлено в кран {tap_position}")
             return True
+            
         except sqlite3.IntegrityError:
-            print(f"Ошибка: Кран {tap_position} уже занят!")
+            print(f"Ошибка: Кран {tap_position} уже существует")
             return False
         except Exception as e:
             print(f"Ошибка при добавлении пива: {e}")
             return False
     
-    def get_all_beers(self) -> List[Tuple]:
-        """Получить все записи о пиве"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT tap_position, brewery, beer_name, beer_style, price_per_liter
-            FROM beer_taps
-            ORDER BY tap_position
-        ''')
-        
-        results = cursor.fetchall()
-        conn.close()
-        return results
-    
     def get_beer_by_tap(self, tap_position: int) -> Optional[Tuple]:
-        """Получить информацию о пиве по номеру крана"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
+        """Получает информацию о пиве по номеру крана
         
-        cursor.execute('''
-            SELECT tap_position, brewery, beer_name, beer_style, price_per_liter
-            FROM beer_taps
-            WHERE tap_position = ?
-        ''', (tap_position,))
-        
-        result = cursor.fetchone()
-        conn.close()
-        return result
-    
-    def update_beer(self, tap_position: int, brewery: str = None, beer_name: str = None, 
-                   beer_style: str = None, price_per_liter: float = None) -> bool:
-        """Обновить информацию о пиве в кране"""
+        Args:
+            tap_position: Номер позиции крана
+            
+        Returns:
+            Кортеж с данными о пиве или None если не найдено
+        """
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # Строим динамический запрос обновления
+            cursor.execute('''
+                SELECT id, tap_position, brewery, name, style, 
+                       price_per_liter, description, cost_400ml, cost_250ml, untappd_url, abv, ibu
+                FROM beer_taps WHERE tap_position = ?
+            ''', (tap_position,))
+            
+            result = cursor.fetchone()
+            conn.close()
+            return result
+            
+        except Exception as e:
+            print(f"Ошибка при получении пива: {e}")
+            return None
+    
+    def get_all_beers(self) -> List[Tuple]:
+        """Получает все пива из базы данных
+        
+        Returns:
+            Список кортежей с данными о всех пивах
+        """
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT id, tap_position, brewery, name, style, 
+                       price_per_liter, description, cost_400ml, cost_250ml, untappd_url, abv, ibu
+                FROM beer_taps ORDER BY tap_position
+            ''')
+            
+            results = cursor.fetchall()
+            conn.close()
+            return results
+            
+        except Exception as e:
+            print(f"Ошибка при получении всех пив: {e}")
+            return []
+    
+    def update_beer(self, tap_position: int, brewery: str = None, name: str = None,
+                   style: str = None, price_per_liter: float = None, 
+                   description: str = None, cost_400ml: float = None, cost_250ml: float = None) -> bool:
+        """Обновляет информацию о пиве
+        
+        Args:
+            tap_position: Номер позиции крана
+            brewery: Название пивоварни
+            name: Название пива
+            style: Сорт пива
+            price_per_liter: Цена за литр
+            description: Описание пива
+            cost_400ml: Стоимость за 400 мл
+            cost_250ml: Стоимость за 250 мл
+            
+        Returns:
+            True если успешно обновлено, False если ошибка
+        """
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Формируем запрос обновления только для переданных полей
             update_fields = []
             values = []
             
             if brewery is not None:
                 update_fields.append("brewery = ?")
                 values.append(brewery)
-            if beer_name is not None:
-                update_fields.append("beer_name = ?")
-                values.append(beer_name)
-            if beer_style is not None:
-                update_fields.append("beer_style = ?")
-                values.append(beer_style)
+            if name is not None:
+                update_fields.append("name = ?")
+                values.append(name)
+            if style is not None:
+                update_fields.append("style = ?")
+                values.append(style)
             if price_per_liter is not None:
                 update_fields.append("price_per_liter = ?")
                 values.append(price_per_liter)
+            if description is not None:
+                update_fields.append("description = ?")
+                values.append(description)
+            if cost_400ml is not None:
+                update_fields.append("cost_400ml = ?")
+                values.append(cost_400ml)
+            if cost_250ml is not None:
+                update_fields.append("cost_250ml = ?")
+                values.append(cost_250ml)
             
             if not update_fields:
-                print("Нет данных для обновления")
+                print("Нет полей для обновления")
                 return False
             
             values.append(tap_position)
@@ -120,132 +226,300 @@ class BeerDatabase:
             query = f"UPDATE beer_taps SET {', '.join(update_fields)} WHERE tap_position = ?"
             cursor.execute(query, values)
             
-            if cursor.rowcount > 0:
-                conn.commit()
-                conn.close()
-                print(f"Информация о кране {tap_position} обновлена")
-                return True
-            else:
-                conn.close()
+            if cursor.rowcount == 0:
                 print(f"Кран {tap_position} не найден")
                 return False
-                
+            
+            conn.commit()
+            conn.close()
+            return True
+            
         except Exception as e:
-            print(f"Ошибка при обновлении: {e}")
+            print(f"Ошибка при обновлении пива: {e}")
+            return False
+    
+    def update_beer_field(self, tap_position: int, field: str, value) -> bool:
+        """Обновляет конкретное поле пива
+        
+        Args:
+            tap_position: Номер позиции крана
+            field: Название поля для обновления
+            value: Новое значение
+            
+        Returns:
+            True если успешно обновлено, False если ошибка
+        """
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Маппинг полей на названия колонок в БД
+            field_mapping = {
+                'brewery': 'brewery',
+                'name': 'name', 
+                'style': 'style',
+                'price': 'price_per_liter',
+                'cost_400ml': 'cost_400ml',
+                'cost_250ml': 'cost_250ml',
+                'description': 'description',
+                'untappd_url': 'untappd_url',
+                'abv': 'abv',
+                'ibu': 'ibu'
+            }
+            
+            if field not in field_mapping:
+                print(f"Неверное поле: {field}")
+                return False
+            
+            db_field = field_mapping[field]
+            query = f"UPDATE beer_taps SET {db_field} = ? WHERE tap_position = ?"
+            cursor.execute(query, (value, tap_position))
+            
+            if cursor.rowcount == 0:
+                print(f"Кран {tap_position} не найден")
+                return False
+            
+            conn.commit()
+            conn.close()
+            return True
+            
+        except Exception as e:
+            print(f"Ошибка при обновлении поля {field}: {e}")
             return False
     
     def delete_beer(self, tap_position: int) -> bool:
-        """Удалить пиво из крана"""
+        """Удаляет пиво из крана
+        
+        Args:
+            tap_position: Номер позиции крана
+            
+        Returns:
+            True если успешно удалено, False если ошибка
+        """
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
             cursor.execute('DELETE FROM beer_taps WHERE tap_position = ?', (tap_position,))
             
-            if cursor.rowcount > 0:
-                conn.commit()
-                conn.close()
-                print(f"Пиво из крана {tap_position} удалено")
-                return True
-            else:
-                conn.close()
+            if cursor.rowcount == 0:
                 print(f"Кран {tap_position} не найден")
                 return False
-                
+            
+            conn.commit()
+            conn.close()
+            return True
+            
         except Exception as e:
-            print(f"Ошибка при удалении: {e}")
+            print(f"Ошибка при удалении пива: {e}")
             return False
     
-    def display_all_beers(self):
-        """Отобразить все краны в удобном формате"""
-        beers = self.get_all_beers()
+    def get_tap_count(self) -> int:
+        """Получает количество кранов в базе данных
         
-        if not beers:
-            print("Краны пусты")
-            return
-        
-        print("\n" + "="*80)
-        print(f"{'Кран':<5} {'Пивоварня':<20} {'Название пива':<25} {'Стиль':<15} {'Цена/л':<10}")
-        print("="*80)
-        
-        for beer in beers:
-            tap_pos, brewery, name, style, price = beer
-            print(f"{tap_pos:<5} {brewery:<20} {name:<25} {style:<15} {price:<10.2f} ₽")
-        
-        print("="*80)
-
-def main():
-    """Основная функция для интерактивной работы с базой данных"""
-    db = BeerDatabase()
+        Returns:
+            Количество кранов
+        """
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute('SELECT COUNT(*) FROM beer_taps')
+            count = cursor.fetchone()[0]
+            conn.close()
+            return count
+            
+        except Exception as e:
+            print(f"Ошибка при подсчете кранов: {e}")
+            return 0
     
-    while True:
-        print("\n" + "="*50)
-        print("УПРАВЛЕНИЕ ПИВНЫМИ КРАНАМИ")
-        print("="*50)
-        print("1. Показать все краны")
-        print("2. Добавить пиво в кран")
-        print("3. Обновить информацию о пиве")
-        print("4. Удалить пиво из крана")
-        print("5. Найти пиво по номеру крана")
-        print("0. Выход")
-        print("="*50)
+    def save_to_history(self, brewery: str, name: str, style: str, 
+                       description: str = "", untappd_url: str = "",
+                       abv: float = None, ibu: float = None) -> bool:
+        """Сохраняет пиво в историю или обновляет счетчик
         
-        choice = input("Выберите действие (0-5): ").strip()
+        Args:
+            brewery: Название пивоварни
+            name: Название пива
+            style: Стиль пива
+            description: Описание
+            untappd_url: Ссылка на Untappd
+            abv: Процент алкоголя
+            ibu: Горечь
+            
+        Returns:
+            True если успешно, False если ошибка
+        """
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Проверяем, есть ли уже такое пиво в истории
+            cursor.execute('''
+                SELECT id, added_count FROM beer_history 
+                WHERE brewery = ? AND name = ?
+            ''', (brewery, name))
+            
+            existing = cursor.fetchone()
+            
+            if existing:
+                # Обновляем счетчик и дату
+                beer_id, count = existing
+                cursor.execute('''
+                    UPDATE beer_history 
+                    SET added_count = ?, last_added = CURRENT_TIMESTAMP,
+                        style = ?, description = ?, untappd_url = ?, abv = ?, ibu = ?
+                    WHERE id = ?
+                ''', (count + 1, style, description, untappd_url, abv, ibu, beer_id))
+            else:
+                # Добавляем новое пиво в историю
+                cursor.execute('''
+                    INSERT INTO beer_history 
+                    (brewery, name, style, description, untappd_url, abv, ibu)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (brewery, name, style, description, untappd_url, abv, ibu))
+            
+            conn.commit()
+            conn.close()
+            return True
+            
+        except Exception as e:
+            print(f"Ошибка при сохранении в историю: {e}")
+            return False
+    
+    def get_beer_history(self, limit: int = 20) -> List[Tuple]:
+        """Получает историю пива, отсортированную по частоте использования
         
-        if choice == "0":
-            print("До свидания!")
-            break
-        elif choice == "1":
-            db.display_all_beers()
-        elif choice == "2":
-            try:
-                tap = int(input("Номер крана: "))
-                brewery = input("Пивоварня: ")
-                name = input("Название пива: ")
-                style = input("Стиль пива: ")
-                price = float(input("Цена за литр (₽): "))
-                db.add_beer(tap, brewery, name, style, price)
-            except ValueError:
-                print("Ошибка: Неверный формат данных")
-        elif choice == "3":
-            try:
-                tap = int(input("Номер крана для обновления: "))
-                
-                print("Введите новые данные (оставьте пустым для сохранения текущих):")
-                brewery = input("Пивоварня: ").strip() or None
-                name = input("Название пива: ").strip() or None
-                style = input("Стиль пива: ").strip() or None
-                price_input = input("Цена за литр (₽): ").strip()
-                price = float(price_input) if price_input else None
-                
-                db.update_beer(tap, brewery, name, style, price)
-            except ValueError:
-                print("Ошибка: Неверный формат данных")
-        elif choice == "4":
-            try:
-                tap = int(input("Номер крана для удаления: "))
-                confirm = input(f"Вы уверены, что хотите удалить пиво из крана {tap}? (да/нет): ")
-                if confirm.lower() in ['да', 'yes', 'y']:
-                    db.delete_beer(tap)
-            except ValueError:
-                print("Ошибка: Неверный формат номера крана")
-        elif choice == "5":
-            try:
-                tap = int(input("Номер крана: "))
-                beer = db.get_beer_by_tap(tap)
-                if beer:
-                    print(f"\nКран {beer[0]}:")
-                    print(f"  Пивоварня: {beer[1]}")
-                    print(f"  Название: {beer[2]}")
-                    print(f"  Стиль: {beer[3]}")
-                    print(f"  Цена за литр: {beer[4]} ₽")
-                else:
-                    print(f"Кран {tap} пуст или не существует")
-            except ValueError:
-                print("Ошибка: Неверный формат номера крана")
-        else:
-            print("Неверный выбор, попробуйте снова")
-
-if __name__ == "__main__":
-    main()
-
+        Args:
+            limit: Максимальное количество записей
+            
+        Returns:
+            Список кортежей с данными из истории
+        """
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT id, brewery, name, style, description, 
+                       untappd_url, abv, ibu, added_count, last_added
+                FROM beer_history 
+                ORDER BY added_count DESC, last_added DESC
+                LIMIT ?
+            ''', (limit,))
+            
+            results = cursor.fetchall()
+            conn.close()
+            return results
+            
+        except Exception as e:
+            print(f"Ошибка при получении истории: {e}")
+            return []
+    
+    def search_beer_history(self, search_term: str, limit: int = 10) -> List[Tuple]:
+        """Поиск пива в истории по названию или пивоварне
+        
+        Args:
+            search_term: Строка для поиска
+            limit: Максимальное количество результатов
+            
+        Returns:
+            Список кортежей с найденными пивами
+        """
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            search_pattern = f"%{search_term}%"
+            cursor.execute('''
+                SELECT id, brewery, name, style, description, 
+                       untappd_url, abv, ibu, added_count, last_added
+                FROM beer_history 
+                WHERE name LIKE ? OR brewery LIKE ?
+                ORDER BY added_count DESC, last_added DESC
+                LIMIT ?
+            ''', (search_pattern, search_pattern, limit))
+            
+            results = cursor.fetchall()
+            conn.close()
+            return results
+            
+        except Exception as e:
+            print(f"Ошибка при поиске в истории: {e}")
+            return []
+    
+    def get_beer_from_history(self, history_id: int) -> Optional[Tuple]:
+        """Получает конкретное пиво из истории по ID
+        
+        Args:
+            history_id: ID записи в истории
+            
+        Returns:
+            Кортеж с данными или None
+        """
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT id, brewery, name, style, description, 
+                       untappd_url, abv, ibu, added_count, last_added
+                FROM beer_history 
+                WHERE id = ?
+            ''', (history_id,))
+            
+            result = cursor.fetchone()
+            conn.close()
+            return result
+            
+        except Exception as e:
+            print(f"Ошибка при получении пива из истории: {e}")
+            return None
+    
+    def delete_from_history(self, history_id: int) -> bool:
+        """Удаляет запись из истории пива
+        
+        Args:
+            history_id: ID записи в истории
+            
+        Returns:
+            True если успешно удалено, False если ошибка
+        """
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute('DELETE FROM beer_history WHERE id = ?', (history_id,))
+            
+            if cursor.rowcount == 0:
+                print(f"Запись {history_id} не найдена в истории")
+                conn.close()
+                return False
+            
+            conn.commit()
+            conn.close()
+            return True
+            
+        except Exception as e:
+            print(f"Ошибка при удалении из истории: {e}")
+            return False
+    
+    def clear_all_history(self) -> bool:
+        """Очищает всю историю пива
+        
+        Returns:
+            True если успешно, False если ошибка
+        """
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute('DELETE FROM beer_history')
+            
+            conn.commit()
+            conn.close()
+            return True
+            
+        except Exception as e:
+            print(f"Ошибка при очистке истории: {e}")
+            return False

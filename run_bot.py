@@ -1,51 +1,60 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-Скрипт для запуска Telegram бота управления пивными кранами
+Скрипт для запуска Telegram бота
 """
 
-import sys
 import os
-from config import Config, ENVIRONMENT_SETUP
-from telegram_bot import BeerBot
-
-def setup_environment():
-    """Показ инструкций по настройке окружения"""
-    print("НАСТРОЙКА TELEGRAM БОТА")
-    print("="*50)
-    print(ENVIRONMENT_SETUP)
-    print("="*50)
-    print("\nПосле настройки переменных окружения запустите:")
-    print("python3 run_bot.py")
-    print("\nИли установите переменные прямо в командной строке:")
-    print('export TELEGRAM_BOT_TOKEN="ваш_токен"')
-    print('export ADMIN_IDS="ваш_id"')
-    print("python3 run_bot.py")
+import sys
+from bot_config import BotConfig
 
 def main():
     """Основная функция запуска бота"""
-    print("Запуск бота управления пивными кранами...")
+    print("TELEGRAM BOT ДЛЯ УПРАВЛЕНИЯ ПИВНЫМИ КРАНАМИ")
+    print("=" * 50)
+    
+    # Загружаем конфигурацию из .env файла
+    if not BotConfig.load_env_file():
+        print("Файл .env не найден")
+        print("Запустите: python3 setup_bot.py для настройки")
+        return 1
     
     # Проверяем конфигурацию
-    if not Config.validate():
-        print("\n" + "="*50)
-        setup_environment()
-        sys.exit(1)
+    if not BotConfig.validate_config():
+        print("Конфигурация неполная")
+        print("Запустите: python3 setup_bot.py для настройки")
+        return 1
     
-    # Показываем конфигурацию
-    Config.print_config()
+    # Получаем токен из переменной окружения
+    token = os.getenv('TELEGRAM_BOT_TOKEN')
+    if not token:
+        print("Ошибка: Не установлен TELEGRAM_BOT_TOKEN")
+        print("Запустите: python3 setup_bot.py для настройки")
+        return 1
+    
+    # ID администраторов
+    admin_ids = BotConfig.get_admin_ids()
+    if not admin_ids:
+        print("Ошибка: Не установлены ADMIN_IDS")
+        print("Запустите: python3 setup_bot.py для настройки")
+        return 1
     
     try:
-        # Создаем и запускаем бота
-        bot = BeerBot(Config.TELEGRAM_BOT_TOKEN, Config.ADMIN_IDS)
-        print("\nБот запущен! Нажмите Ctrl+C для остановки.")
+        # Импортируем и запускаем бота
+        from telegram_bot import BeerBot
+        
+        print("Конфигурация загружена успешно")
+        print("Запуск бота...")
+        
+        bot = BeerBot(token, admin_ids)
         bot.run()
         
-    except KeyboardInterrupt:
-        print("\nБот остановлен пользователем")
+    except ImportError as e:
+        print(f"Ошибка импорта: {e}")
+        print("Установите зависимости: pip install -r requirements.txt")
+        return 1
     except Exception as e:
-        print(f"\nОшибка при запуске бота: {e}")
-        sys.exit(1)
+        print(f"Ошибка при запуске бота: {e}")
+        return 1
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
