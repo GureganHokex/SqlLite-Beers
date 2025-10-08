@@ -228,37 +228,14 @@ class BeerBot:
         user_id = update.effective_user.id
         is_admin = self.is_admin(user_id)
         
-        # Создаем постоянную клавиатуру как в приложении
-        if is_admin:
-            keyboard = [
-                [
-                    KeyboardButton("Краны"),
-                    KeyboardButton("Поиск")
-                ],
-                [
-                    KeyboardButton("Добавить"),
-                    KeyboardButton("Редактировать")
-                ],
-                [
-                    KeyboardButton("Удалить"),
-                    KeyboardButton("История")
-                ]
-            ]
-            
-            welcome_text = "ПИВНЫЕ КРАНЫ\n\n"
-            welcome_text += "Добро пожаловать в систему управления!\n"
-            welcome_text += "Используйте кнопки ниже для навигации:"
-        else:
-            keyboard = [
-                [
-                    KeyboardButton("Краны"),
-                    KeyboardButton("Поиск")
-                ]
-            ]
-            
-            welcome_text = "ПИВНЫЕ КРАНЫ\n\n"
-            welcome_text += "Добро пожаловать!\n"
-            welcome_text += "Используйте кнопки ниже для навигации:"
+        # Создаем начальную клавиатуру только с "Пивные краны"
+        keyboard = [
+            [KeyboardButton("Пивные краны")]
+        ]
+        
+        welcome_text = "ПИВНЫЕ КРАНЫ\n\n"
+        welcome_text += "Добро пожаловать!\n"
+        welcome_text += "Нажмите кнопку ниже для просмотра кранов:"
         
         reply_markup = ReplyKeyboardMarkup(
             keyboard, 
@@ -281,6 +258,47 @@ class BeerBot:
         
         # Кнопки меню всегда работают, независимо от состояния разговора
         menu_buttons = ["Краны", "Поиск", "Добавить", "Редактировать", "Удалить", "История"]
+        
+        # Обрабатываем кнопку "Пивные краны" отдельно
+        if text == "Пивные краны":
+            # Показываем краны
+            await self.show_taps_command(update, context)
+            
+            # Меняем клавиатуру на полное меню для администраторов
+            if is_admin:
+                full_keyboard = [
+                    [
+                        KeyboardButton("Краны"),
+                        KeyboardButton("Поиск")
+                    ],
+                    [
+                        KeyboardButton("Добавить"),
+                        KeyboardButton("Редактировать")
+                    ],
+                    [
+                        KeyboardButton("Удалить"),
+                        KeyboardButton("История")
+                    ]
+                ]
+                reply_markup = ReplyKeyboardMarkup(full_keyboard, resize_keyboard=True)
+                await update.message.reply_text(
+                    "Меню активировано!",
+                    reply_markup=reply_markup
+                )
+            else:
+                # Для обычных пользователей показываем только основные кнопки
+                user_keyboard = [
+                    [
+                        KeyboardButton("Краны"),
+                        KeyboardButton("Поиск")
+                    ]
+                ]
+                reply_markup = ReplyKeyboardMarkup(user_keyboard, resize_keyboard=True)
+                await update.message.reply_text(
+                    "Меню активировано!",
+                    reply_markup=reply_markup
+                )
+            return
         
         if text in menu_buttons:
             # Обрабатываем кнопки меню
